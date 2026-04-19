@@ -57,12 +57,16 @@ ALLOWED_IPS = [
 
 
 # =============================================================================
-# ФУНКЦИЯ: АВТОЗАПУСК ЧЕРЕЗ РЕЕСТР
+# ФУНКЦИЯ: АВТОЗАПУСК ЧЕРЕЗ РЕЕСТР (auto_run)
 # =============================================================================
 
-def add_to_startup():
+def auto_run():
     """
-    Добавляет программу в автозапуск через реестр Windows.
+    Функция добавляет программу в автозапуск через реестр Windows.
+    Проверяет, есть ли программа уже в автозагрузке, и если нет - добавляет.
+    
+    Использует winreg для работы с реестром:
+    - HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
     """
     try:
         # Определяем путь к запущенному файлу
@@ -82,16 +86,20 @@ def add_to_startup():
         )
         
         try:
-            # Проверяем, существует ли ключ
+            # Проверяем, существует ли уже ключ
             existing_value = winreg.QueryValueEx(key, REG_KEY_NAME)
+            print(f"[Auto-Run] Уже в автозапуске: {existing_value[0]}")
         except FileNotFoundError:
-            # Ключ не существует - добавляем
+            # Ключ не существует - добавляем новый
             winreg.SetValueEx(key, REG_KEY_NAME, 0, winreg.REG_SZ, exe_path)
+            print(f"[Auto-Run] Добавлено в автозапуск: {exe_path}")
         
         winreg.CloseKey(key)
         
+    except PermissionError:
+        print("[Auto-Run] Ошибка: нет прав для записи в реестр")
     except Exception as e:
-        pass  # Игнорируем ошибки автозапуска
+        print(f"[Auto-Run] Ошибка: {e}")
 
 
 # =============================================================================
@@ -239,7 +247,7 @@ def start_server():
     print("=" * 50)
     
     # Настраиваем автозапуск
-    add_to_startup()
+    auto_run()
     
     while True:
         try:
