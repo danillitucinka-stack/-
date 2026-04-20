@@ -1,13 +1,27 @@
 ﻿import socket
 import threading
-import pyautogui
 import zlib
 import os
 import sys
 import time
-import cv2
-import numpy
 import pyautogui
+from io import BytesIO
+
+# Проверка и выбор библиотеки для скриншотов
+try:
+    import cv2
+    import numpy as np
+    USE_CV2 = True
+    print("Используется OpenCV для скриншотов")
+except ImportError:
+    USE_CV2 = False
+    print("ВНИМАНИЕ: OpenCV не найден! Используем PIL для скриншотов")
+    try:
+        from PIL import Image
+        import numpy as np
+    except ImportError:
+        print("ОШИБКА: Ни OpenCV, ни PIL не найдены!")
+        sys.exit(1)
 
 
 SERVER_PORT = 5555
@@ -157,14 +171,23 @@ def handle_client(client_socket, addr):
 
 
 def send_screenshots(client_socket):
+    """Отправка скриншотов клиенту с поддержкой cv2 и PIL"""
     while True:
         try:
-            screenshot = pyautogui.screenshot()
-            img_array = np.array(screenshot)
-            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-            
-            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), SCREENSHOT_QUALITY]
-            result, encoded_img = cv2.imencode('.jpg', img_bgr, encode_param)
+            if USE_CV2:
+                # Используем OpenCV (быстрее)
+                screenshot = pyautogui.screenshot()
+                img_array = np.array(screenshot)
+                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), SCREENSHOT_QUALITY]
+                result, encoded_img = cv2.imencode('.jpg', img_bgr, encode_param)
+            else:
+                # Используем PIL как запасной вариант
+                screenshot = pyautogui.screenshot()
+                buffer = BytesIO()
+                screenshot.save(buffer, format='JPEG', quality=SCREENSHOT_QUALITY)
+                encoded_img = np.frombuffer(buffer.getvalue(), dtype=np.uint8)
+                result = True
             
             if not result:
                 continue

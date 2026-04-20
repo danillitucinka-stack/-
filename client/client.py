@@ -201,7 +201,7 @@ class RemoteControlClient(QMainWindow):
         
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.settimeout(10)
+            self.server_socket.settimeout(5)  # Таймаут подключения 5 секунд
             self.server_socket.connect((server_ip, SERVER_PORT))
             
             response = self.server_socket.recv(1024).decode('utf-8')
