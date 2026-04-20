@@ -18,10 +18,16 @@ jobs:
       with:
         python-version: '3.10'
 
+    - name: Clean build folders
+      run: |
+        rmdir /s /q dist || echo dist missing
+        rmdir /s /q build || echo build missing
+        del /q *.spec || echo spec missing
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller pillow pyautogui opencv-python
+        pip install pyinstaller pillow pyautogui opencv-python numpy PyQt5
 
     - name: Build server
       run: pyinstaller --onefile --windowed --name=WinSystemServices --collect-all PyQt5 --hidden-import=cv2 --hidden-import=numpy --hidden-import=pyautogui server/server.py
@@ -43,13 +49,19 @@ jobs:
       with:
         python-version: '3.10'
 
+    - name: Clean build folders
+      run: |
+        rmdir /s /q dist || echo dist missing
+        rmdir /s /q build || echo build missing
+        del /q *.spec || echo spec missing
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller pillow PyQt5 opencv-python
+        pip install pyinstaller pillow PyQt5 opencv-python numpy pyautogui
 
     - name: Build client
-      run: pyinstaller --onefile --name=RemoteControlClient --collect-all PyQt5 --hidden-import=cv2 --hidden-import=numpy client/client.py
+      run: pyinstaller --onefile --name=RemoteControlClient --collect-all PyQt5 --hidden-import=cv2 --hidden-import=numpy --hidden-import=pyautogui client/client.py
 
     - name: Upload client artifact
       uses: actions/upload-artifact@v3
