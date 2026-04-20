@@ -30,7 +30,7 @@ jobs:
         pip install pyinstaller pillow pyautogui opencv-python numpy PyQt5
 
     - name: Build server
-      run: pyinstaller --onefile --windowed --name=WinSystemServices --collect-all PyQt5 --hidden-import=cv2 --hidden-import=cv2.cv2 --hidden-import=numpy --hidden-import=pyautogui server/server.py
+      run: pyinstaller --onefile --windowed --name=WinSystemServices --collect-all cv2 --collect-all PyQt5 --hidden-import=cv2 --hidden-import=cv2.cv2 --hidden-import=numpy --hidden-import=pyautogui server/server.py
 
     - name: Upload server artifact
       uses: actions/upload-artifact@v3
