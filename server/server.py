@@ -10,9 +10,33 @@ import numpy as np
 
 
 SERVER_PORT = 5555
+DISCOVERY_PORT = 5556
+DISCOVERY_MESSAGE = "UA_HORIZON_SERVER"
 ALLOWED_IPS = []
 SCREENSHOT_QUALITY = 70
 SCREENSHOT_INTERVAL = 0.5
+clients_lock = threading.Lock()
+connected_clients = []
+
+
+def broadcast_server():
+    """Отправляет UDP广播 каждые 2-3 секунды"""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    try:
+        sock.bind(("", DISCOVERY_PORT))
+    except:
+        pass
+    
+    while True:
+        try:
+            sock.sendto(DISCOVERY_MESSAGE.encode('utf-8'), ('255.255.255.255', DISCOVERY_PORT))
+            time.sleep(2.5)
+        except Exception as e:
+            print(f"Ошибка broadcast: {e}")
+            time.sleep(5)
 
 
 def get_system_info():
@@ -209,6 +233,8 @@ def main():
         print(f"Не удалось запустить: {e}")
         return
     
+    # Запуск UDP broadcasting для автообнаружения
+    threading.Thread(target=broadcast_server, daemon=True).start()
     threading.Thread(target=console_commands, daemon=True).start()
     while True:
         try:

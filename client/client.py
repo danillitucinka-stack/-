@@ -12,12 +12,15 @@ from PIL import Image
 
 
 SERVER_PORT = 5555
+DISCOVERY_PORT = 5556
+DISCOVERY_MESSAGE = "UA_HORIZON_SERVER"
 
 
 class SignalEmitter(QObject):
     update_screenshot = pyqtSignal(object)
     update_status = pyqtSignal(str)
     connection_lost = pyqtSignal()
+    server_found = pyqtSignal(str)
 
 
 class RemoteControlClient(QMainWindow):
@@ -28,13 +31,63 @@ class RemoteControlClient(QMainWindow):
         self.running = True
         self.server_screen_size = None
         self.viewport_size = None
+        self.discovery_running = False
+        self.found_ip = None
         self.emitter = SignalEmitter()
         
         self.emitter.update_screenshot.connect(self.display_screenshot)
         self.emitter.update_status.connect(self.update_status_label)
         self.emitter.connection_lost.connect(self.handle_connection_lost)
+        self.emitter.server_found.connect(self.on_server_found)
         
         self.init_ui()
+        self.start_discovery()
+    
+    
+    def start_discovery(self):
+        """Запуск прослушивания UDP для автообнаружения сервера"""
+        self.discovery_running = True
+        self.status_label.setText("Поиск сервера...")
+        threading.Thread(target=self.discovery_listener, daemon=True).start()
+    
+    
+    def discovery_listener(self):
+        """Слушает UDP порт 5556 для обнаружения сервера"""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        
+        try:
+            sock.bind(("", DISCOVERY_PORT))
+        except Exception as e:
+            print(f"Не удалось открыть порт: {e}")
+            return
+        
+        sock.settimeout(1.0)
+        
+        while self.discovery_running:
+            try:
+                data, addr = sock.recvfrom(4096)
+                message = data.decode('utf-8', errors='ignore')
+                
+                if message == DISCOVERY_MESSAGE:
+                    self.found_ip = addr[0]
+                    self.emitter.server_found.emit(addr[0])
+            except socket.timeout:
+                continue
+            except Exception as e:
+                if self.discovery_running:
+                    print(f"Ошибка discovery: {e}")
+        
+        sock.close()
+    
+    
+    def on_server_found(self, ip):
+        """Обработка найденного сервера"""
+        self.ip_input.setText(ip)
+        self.status_label.setText(f"Найден: {ip}")
+        # Автоподключение
+        self.connect_to_server()
     
     
     def init_ui(self):
@@ -161,6 +214,7 @@ class RemoteControlClient(QMainWindow):
                 
                 self.info_tab.setText(f"Имя ПК: {pc_name}\nОС: {os_version}")
                 self.connected = True
+                self.discovery_running = False  # Остановить поиск
                 self.status_label.setText(f"Подключено к {server_ip}")
                 self.connect_btn.setText("Отключиться")
                 self.connect_btn.clicked.disconnect()
@@ -171,6 +225,7 @@ class RemoteControlClient(QMainWindow):
                 
             elif response == "CONNECTED":
                 self.connected = True
+                self.discovery_running = False  # Остановить поиск
                 self.status_label.setText(f"Подключено к {server_ip}")
                 threading.Thread(target=self.receive_data, daemon=True).start()
                 
@@ -213,6 +268,8 @@ class RemoteControlClient(QMainWindow):
         self.connect_btn.setEnabled(True)
         self.viewport.setText("Отключено")
         self.viewport.setStyleSheet("background-color: #1a1a1a;")
+        # Перезапуск поиска сервера
+        self.start_discovery()
     
     
     def handle_connection_lost(self):
