@@ -6,7 +6,8 @@ import os
 import sys
 import time
 import cv2
-import numpy as np
+import numpy
+import pyautogui
 
 
 SERVER_PORT = 5555
