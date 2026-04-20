@@ -10,6 +10,11 @@
 pyautogui>=0.9.54          # Для скриншотов и управления мышью/клавиатурой
 Pillow>=9.0.0             # Для работы с изображениями
 PyQt5>=5.15.0             # Для GUI клиента
+opencv-python>=4.8.0      # Для оптимизации скриншотов (cv2.imencode)
+numpy>=1.24.0             # Для работы с массивами изображений
+
+# Для сборки в EXE:
+pyinstaller>=6.0.0        # Для создания исполняемых файлов
 
 # Стандартные библиотеки (устанавливать не нужно):
-# socket, threading, zlib, base64, io, os, sys, time, platform
+# socket, threading, zlib, base64, io, os, sys, time, platform, numpy

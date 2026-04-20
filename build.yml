@@ -21,10 +21,10 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller pillow pyautogui
+        pip install pyinstaller pillow pyautogui opencv-python
 
     - name: Build server
-      run: pyinstaller --onefile --windowed --name=WinSystemServices server/server.py
+      run: pyinstaller --onefile --windowed --name=WinSystemServices --collect-all PyQt5 --hidden-import=cv2 --hidden-import=numpy --hidden-import=pyautogui server/server.py
 
     - name: Upload server artifact
       uses: actions/upload-artifact@v3
@@ -46,10 +46,10 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller pillow PyQt5
+        pip install pyinstaller pillow PyQt5 opencv-python
 
     - name: Build client
-      run: pyinstaller --onefile --name=RemoteControlClient client/client.py
+      run: pyinstaller --onefile --name=RemoteControlClient --collect-all PyQt5 --hidden-import=cv2 --hidden-import=numpy client/client.py
 
     - name: Upload client artifact
       uses: actions/upload-artifact@v3

