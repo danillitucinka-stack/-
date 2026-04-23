@@ -1,4 +1,4 @@
-﻿import socket
+import socket
 import threading
 import zlib
 import io
@@ -21,6 +21,26 @@ class SignalEmitter(QObject):
     update_status = pyqtSignal(str)
     connection_lost = pyqtSignal()
     server_found = pyqtSignal(str)
+
+
+class RemoteViewLabel(QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if hasattr(self.parent(), 'parent') and hasattr(self.parent().parent(), 'mouse_press'):
+            self.parent().parent().mouse_press(event)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if hasattr(self.parent(), 'parent') and hasattr(self.parent().parent(), 'mouse_release'):
+            self.parent().parent().mouse_release(event)
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        if hasattr(self.parent(), 'parent') and hasattr(self.parent().parent(), 'mouse_move'):
+            self.parent().parent().mouse_move(event)
 
 
 class RemoteControlClient(QMainWindow):
@@ -137,17 +157,13 @@ class RemoteControlClient(QMainWindow):
     
     def setup_remote_view(self):
         layout = QVBoxLayout(self.remote_view_tab)
-        
-        self.viewport = QLabel()
+
+        self.viewport = RemoteViewLabel()
         self.viewport.setAlignment(Qt.AlignCenter)
         self.viewport.setStyleSheet("background-color: #1a1a1a; border: 2px solid #333;")
         self.viewport.setMinimumSize(800, 600)
         self.viewport.setScaledContents(False)
-        
-        self.viewport.mousePressEvent = self.mouse_press
-        self.viewport.mouseReleaseEvent = self.mouse_release
-        self.viewport.mouseMoveEvent = self.mouse_move
-        
+
         scroll = QScrollArea()
         scroll.setWidget(self.viewport)
         scroll.setWidgetResizable(True)
@@ -339,7 +355,7 @@ class RemoteControlClient(QMainWindow):
                 iw, ih = img.size
                 r = min(w / iw, h / ih)
                 new_size = (int(iw * r), int(ih * r))
-                img = img.resize(new_size, Image.Resampling.LANCZOS)
+                img = img.resize(new_size, Image.ANTIALIAS)
             
             # Сохраняем размер viewport для масштабирования
             if not self.viewport_size:

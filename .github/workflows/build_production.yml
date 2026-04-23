@@ -1,0 +1,44 @@
+name: Build Production
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller mss opencv-python numpy pyqt5 Pillow pywin32
+
+    - name: Build server
+      run: |
+        pyinstaller --onefile --noconsole --name "HorizonSvc" server.py
+
+    - name: Build client
+      run: |
+        pyinstaller --onefile --noconsole --name "HorizonClient" client.py
+
+    - name: Upload server artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: HorizonSvc
+        path: dist/HorizonSvc.exe
+
+    - name: Upload client artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: HorizonClient
+        path: dist/HorizonClient.exe
